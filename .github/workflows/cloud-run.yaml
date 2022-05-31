@@ -1,0 +1,48 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+    - master
+
+env:
+  RUN_PROJECT: ${{ secrets.BASIC_AUTH_USERNAME }}
+  RUN_REGION: us-central1
+  SERVICE_NAME: ml-api
+  BASIC_AUTH_USERNAME: ${{ secrets.BASIC_AUTH_USERNAME }}
+  BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+
+jobs:
+  setup-build-deploy:
+    name: Setup, Build, and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Setup gcloud CLI
+    - uses: GoodleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '209.0.1'
+        service_account_key: ${{ secrets.RUN_SA_KEY }}
+        project_id: ${{ secrets.RUN_PROJECT }}
+
+    # Build and push image to Google Container Registry
+    - name: Build
+      run: |-
+        gcloud builds submit \
+          --quiet \
+          --config cloudbuild.yaml \
+          --subtitutions _BASIC_AUTH_USERNAME = $BASIC_AUTH_USERNAME, _BASIC_AUTH_PASSWORD=$BASIC_AUTH_PASSWORD, _IMAGE_TAG=gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
+
+    # Deploy image to Cloud Run
+    - name: Deploy
+      run: |-
+        gcloud run deploy "$SERVICE_NAME" \
+        --quiet \
+        --region "$RUN_REGION" \
+        --image "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA" \
+        --platform "managed" \
+        --allow-unaunthenticated \
+        --port 5000      
